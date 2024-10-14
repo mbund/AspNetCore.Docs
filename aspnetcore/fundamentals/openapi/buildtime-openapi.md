@@ -3,23 +3,27 @@ title: Generate OpenAPI documents at build time
 author: captainsafia
 description: Learn how to generate OpenAPI documents in your application's build step
 ms.author: safia
-monikerRange: '>= aspnetcore-6.0'
+monikerRange: '>= aspnetcore-9.0'
 ms.custom: mvc
 ms.date: 8/13/2024
 uid: fundamentals/openapi/buildtime-openapi
 ---
+<!-- Per this comment by Mike, Question for @captainsafia: This doc currently says aspnetcore-6.0 and later. Should we make this just 9.0 and later, since 8.0 and earlier involve Swashbuckle or NSwag generating the doc?
+I made it 9.0
+https://github.com/dotnet/AspNetCore.Docs/pull/33361#discussion_r1778546753 -->
+<!-- backup writer.sms.author: tdykstra and rick-anderson -->
 
 # Generate OpenAPI documents at build-time
 
-In a typical web applications, OpenAPI documents are generated at run-time and served via an HTTP request to the application server.
+In typical web apps, OpenAPI documents are generated at run-time and served via an HTTP request to the app server.
 
-In some scenarios, it is helpful to generate the OpenAPI document during the application's build step. These scenarios including:
+Generating OpenAPI documentation during the app's build step can be useful for documentation that is:
 
-- Generating OpenAPI documentation that is committed into source control
-- Generating OpenAPI documentation that is used for spec-based integration testing
-- Generating OpenAPI documentation that is served statically from the web server
+- Committed into source control.
+- Used for spec-based integration testing.
+- Served statically from the web server.
 
-To add support for generating OpenAPI documents at build time, install the `Microsoft.Extensions.ApiDescription.Server` package:
+To add support for generating OpenAPI documents at build time, install the [`Microsoft.Extensions.ApiDescription.Server`](https://www.nuget.org/packages/Microsoft.Extensions.ApiDescription.Server) NuGet package:
 
 ### [Visual Studio](#tab/visual-studio)
 
@@ -36,65 +40,92 @@ Run the following command in the directory that contains the project file:
 ```dotnetcli
 dotnet add package Microsoft.Extensions.ApiDescription.Server --prerelease
 ```
+
 ---
 
-Upon installation, this package will automatically generate the Open API document(s) associated with the application during build and populate them into the application's output directory.
+The `Microsoft.Extensions.ApiDescription.Server` package automatically generates the Open API document(s) associated with the app during build and places them in the app's `obj` directory:
+
+Consider a template created API app named `MyTestApi`:
+
+### [Visual Studio](#tab/visual-studio)
+
+The Output tab in Visual Studio when building the app includes information similar to the following:
+
+```text
+1>Generating document named 'v1'.
+1>Writing document named 'v1' to 'MyProjectPath/obj/MyTestApi.json'.
+```
+
+### [.NET CLI](#tab/net-cli)
+
+The following commands build the app and display the generated OpenAPI document:
 
 ```cli
 $ dotnet build
-$ cat bin/Debub/net9.0/{ProjectName}.json
+$ cat obj/MyTestApi.json
 ```
 
-## Customizing build-time document generation
+---
 
-### Modifying the output directory of the generated Open API file
+The generated `obj/{MyProjectName}.json` file contains the [OpenAPI version, title,  endpoints, and more](https://learn.openapis.org/specification/structure.html). The first few lines of `obj/MyTestApi.json` file:
 
-By default, the generated OpenAPI document will be emitted to the application's output directory. To modify the location of the emitted file, set the target path in the `OpenApiDocumentsDirectory` property.
+:::code language="json" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.json" range="1-15" highlight="4-5":::
 
-```xml
-<PropertyGroup>
-  <OpenApiDocumentsDirectory>./</OpenApiDocumentsDirectory>
-</PropertyGroup>
-```
+## Customize build-time document generation
 
-The value of `OpenApiDocumentsDirectory` is resolved relative to the project file. Using the `./` value above will emit the OpenAPI document in the same directory as the project file.
+Build-time document generation can be customized with properties added to the project file. [dotnet](/dotnet/core/tools/) parses the `ApiDescription.Server` properties in the project file and provides the property and values as arguments to the build-time document generator. The following properties are available and explained in the following sections:
 
-### Modifying the output file name
+:::code language="xml" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.csproj.php" id="snippet_all" highlight="2-4":::
 
-By default, the generated OpenAPI document will have the same name as the application's project file. To modify the name of the emitted file, set the `--file-name` argument in the `OpenApiGenerateDocumentsOptions` property.
+### Modify the output directory of the generated Open API file
 
-```xml
-<PropertyGroup>
-  <OpenApiGenerateDocumentsOptions>--file-name my-open-api</OpenApiGenerateDocumentsOptions>
-</PropertyGroup>
-```
+By default, the generated OpenAPI document is generated in the `obj` directory. The value of the `OpenApiDocumentsDirectory` property:
 
-### Selecting the OpenAPI document to generate
+* Sets the location of the generated file.
+* Is resolved relative to the project file.
 
-Some applications may be configured to emit multiple OpenAPI documents, for various versions of an API or to distinguish between public and internal APIs. By default, the build-time document generator will emit files for all documents that are configured in an application. To only emit for a single document name, set the `--document-name` argument in the `OpenApiGenerateDocumentsOptions` property.
+The following example generates the OpenAPI document in the same directory as the project file:
 
-```xml
-<PropertyGroup>
-  <OpenApiGenerateDocumentsOptions>--document-name v2</OpenApiGenerateDocumentsOptions>
-</PropertyGroup>
-```
+:::code language="xml" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.csproj.php" id="snippet_1" highlight="2":::
 
-## Customizing run-time behavior during build-time document generation
+In the following example, the OpenAPI document is generated in the `MyOpenApiDocs` directory, which is a sibling directory to the project directory:
 
-Under the hood, build-time OpenAPI document generation functions by launching the application's entrypoint with an inert server implementation. This is a requirement to produce accurate OpenAPI documents since all information in the OpenAPI document cannot be statically analyzed. Because the application's entrypoint is invoked, any logic in the applications' startup will be invoked. This includes code that injects services into the DI container or reads from configuration. In some scenarios, it's necessary to restrict the codepaths that will run when the application's entry point is being invoked from build-time document generation. These scenarios include:
+:::code language="xml" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.csproj.php" id="snippet2" highlight="2":::
 
-- Not reading from certain configuration strings
-- Not registering database-related services
+### Modify the output file name
 
-In order to restrict these codepaths from being invoked by the build-time generation pipeline, they can be conditioned behind a check of the entry assembly like so:
+By default, the generated OpenAPI document has the same name as the app's project file. To modify the name of the generated file, set the `--file-name` argument in the `OpenApiGenerateDocumentsOptions` property:
 
-```csharp
-using System.Reflection;
+:::code language="xml" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.csproj.php" id="snippet_file_name" highlight="2":::
 
-var builder = WebApplication.CreateBuilder();
+The preceding markup configures creation of the `obj/my-open-api.json` file.
 
-if (Assembly.GetEntryAssembly()?.GetName().Name != "GetDocument.Insider")
-{
-  builders.Services.AddDefaults();
-}
-```
+### Select the OpenAPI document to generate
+
+Some apps may be configured to generate multiple OpenAPI documents, for example:
+
+* For different versions of an API.
+* To distinguish between public and internal APIs.
+
+By default, the build-time document generator creates files for all documents that are configured in an app. To generate for a single document only, set the `--document-name` argument in the `OpenApiGenerateDocumentsOptions` property:
+
+:::code language="xml" source="~/fundamentals/openapi/samples/9.x/BuildTime/csproj/MyTestApi.csproj.php" id="snippet_doc_name":::
+
+<!-- comment out this section until it's sorted 
+## Customize run-time behavior during build-time document generation
+
+OpenAPI document generation at build-time works by starting the app’s entry point with a temporary background server. This approach is necessary to produce accurate OpenAPI documents, as not all information can be statically analyzed. When the app’s entry point is invoked, any logic in the app’s startup is executed, including code that injects services into the DI container or reads from configuration.
+
+In some scenarios, it's important to restrict certain code paths when the app's entry point is invoked during build-time document generation. These scenarios include:
+
+- Not reading from specific configuration strings.
+- Not registering database-related services.
+
+To prevent these code paths from being invoked by the build-time generation pipeline, they can be conditioned behind a check of the entry assembly:
+
+:::code language="csharp" source="~/fundamentals/openapi/samples/9.x/BuildTime/Skip.cs" id="snippet_1" highlight="7-12":::
+-->
+
+## OpenAPI document cleanup
+
+The generated OpenAPI documents are not cleaned up by `dotnet clean` or **Build > Clean Solution** in Visual Studio. To remove the generated OpenAPI documents, delete the `obj` directory or the directory specified by the `OpenApiDocumentsDirectory` property.
